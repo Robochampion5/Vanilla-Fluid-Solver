@@ -9,7 +9,9 @@ import {
     advectionFragmentShader,
     divergenceFragmentShader,
     jacobiFragmentShader,
-    gradientSubtractFragmentShader
+    gradientSubtractFragmentShader,
+    curlFragmentShader,
+    vorticityFragmentShader
 } from './shaders.js';
 
 export class FluidSolver {
@@ -125,6 +127,12 @@ export class FluidSolver {
             gl.R16F, gl.RED, gl.HALF_FLOAT, 
             gl.NEAREST, gl.CLAMP_TO_EDGE
         );
+
+        this.renderTargets.curl = this.createRenderTarget(
+            256, 256, 
+            gl.R16F, gl.RED, gl.HALF_FLOAT, 
+            gl.NEAREST, gl.CLAMP_TO_EDGE
+        );
     }
 
     initBaseGeometry() {
@@ -155,7 +163,9 @@ export class FluidSolver {
             advection: new GLProgram(this.gl, baseVertexShader, advectionFragmentShader),
             divergence: new GLProgram(this.gl, baseVertexShader, divergenceFragmentShader),
             jacobi: new GLProgram(this.gl, baseVertexShader, jacobiFragmentShader),
-            gradientSubtract: new GLProgram(this.gl, baseVertexShader, gradientSubtractFragmentShader)
+            gradientSubtract: new GLProgram(this.gl, baseVertexShader, gradientSubtractFragmentShader),
+            curl: new GLProgram(this.gl, baseVertexShader, curlFragmentShader),
+            vorticity: new GLProgram(this.gl, baseVertexShader, vorticityFragmentShader)
         };
     }
 
@@ -256,6 +266,58 @@ export class FluidSolver {
     }
 
     /**
+     * Calculates the 2D curl of the velocity field.
+     */
+    executeCurl(velocityTarget, curlTarget) {
+        const gl = this.gl;
+        const prog = this.programs.curl;
+        
+        prog.bind();
+        
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, velocityTarget.read.texture);
+        prog.setUniform('uVelocity', '1i', 0);
+        
+        gl.bindFramebuffer(gl.FRAMEBUFFER, curlTarget.fbo);
+        gl.viewport(0, 0, curlTarget.width, curlTarget.height);
+        
+        gl.bindVertexArray(this.vao);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.bindVertexArray(null);
+    }
+
+    /**
+     * Injects vorticity confinement force to preserve turbulence.
+     */
+    executeVorticity(velocityTarget, curlTarget, confinement, dt) {
+        const gl = this.gl;
+        const prog = this.programs.vorticity;
+        
+        prog.bind();
+        
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, velocityTarget.read.texture);
+        prog.setUniform('uVelocity', '1i', 0);
+        
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, curlTarget.texture);
+        prog.setUniform('uCurl', '1i', 1);
+        
+        prog.setUniform('uConfinement', '1f', confinement);
+        prog.setUniform('dt', '1f', dt);
+        prog.setUniform('uResolution', '2fv', [velocityTarget.read.width, velocityTarget.read.height]);
+        
+        gl.bindFramebuffer(gl.FRAMEBUFFER, velocityTarget.write.fbo);
+        gl.viewport(0, 0, velocityTarget.write.width, velocityTarget.write.height);
+        
+        gl.bindVertexArray(this.vao);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.bindVertexArray(null);
+        
+        velocityTarget.swap();
+    }
+
+    /**
      * Calculates the divergence of the velocity field.
      */
     executeDivergence(velocityTarget, divergenceTarget) {
@@ -268,6 +330,7 @@ export class FluidSolver {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, velocityTarget.read.texture);
         prog.setUniform('uVelocity', '1i', 0);
+        prog.setUniform('uResolution', '2fv', [divergenceTarget.width, divergenceTarget.height]);
         
         // Render to divergence single target
         gl.bindFramebuffer(gl.FRAMEBUFFER, divergenceTarget.fbo);
@@ -301,6 +364,7 @@ export class FluidSolver {
         
         gl.activeTexture(gl.TEXTURE0);
         prog.setUniform('uPressure', '1i', 0);
+        prog.setUniform('uResolution', '2fv', [pressureTarget.read.width, pressureTarget.read.height]);
         gl.viewport(0, 0, pressureTarget.write.width, pressureTarget.write.height);
         
         // CPU iterative loop
@@ -338,6 +402,7 @@ export class FluidSolver {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, pressureTarget.read.texture);
         prog.setUniform('uPressure', '1i', 1);
+        prog.setUniform('uResolution', '2fv', [velocityTarget.read.width, velocityTarget.read.height]);
         
         // Render into velocityTarget.write FBO
         gl.bindFramebuffer(gl.FRAMEBUFFER, velocityTarget.write.fbo);

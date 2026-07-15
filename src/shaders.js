@@ -95,6 +95,7 @@ in vec2 vUv;
 out vec4 fragColor;
 
 uniform sampler2D uVelocity;
+uniform vec2 uResolution;
 
 void main() {
     // Central differences using WebGL2 textureOffset
@@ -122,6 +123,7 @@ uniform sampler2D uPressure;
 uniform sampler2D uDivergence;
 uniform float uAlpha;
 uniform float uBeta;
+uniform vec2 uResolution;
 
 void main() {
     // Left, Right, Bottom, Top pressure samples
@@ -131,6 +133,11 @@ void main() {
     float B = textureOffset(uPressure, vUv, ivec2(0, -1)).x;
     float T = textureOffset(uPressure, vUv, ivec2(0, 1)).x;
     
+    if (gl_FragCoord.x < 1.5) { fragColor = vec4(R, 0.0, 0.0, 1.0); return; }
+    if (gl_FragCoord.x > uResolution.x - 1.5) { fragColor = vec4(L, 0.0, 0.0, 1.0); return; }
+    if (gl_FragCoord.y < 1.5) { fragColor = vec4(T, 0.0, 0.0, 1.0); return; }
+    if (gl_FragCoord.y > uResolution.y - 1.5) { fragColor = vec4(B, 0.0, 0.0, 1.0); return; }
+
     // Center divergence
     float d = texture(uDivergence, vUv).x;
     
@@ -151,6 +158,7 @@ out vec4 fragColor;
 
 uniform sampler2D uPressure;
 uniform sampler2D uVelocity;
+uniform vec2 uResolution;
 
 void main() {
     // Sample pressure gradients using WebGL2 textureOffset
@@ -164,6 +172,69 @@ void main() {
     
     // Subtract the pressure gradient to make the velocity divergence-free
     velocity.xy -= vec2(R - L, T - B) * 0.5;
+    
+    if (gl_FragCoord.x < 1.5 || gl_FragCoord.x > uResolution.x - 1.5 || 
+        gl_FragCoord.y < 1.5 || gl_FragCoord.y > uResolution.y - 1.5) {
+        velocity.xy = vec2(0.0);
+    }
+    
+    fragColor = vec4(velocity, 0.0, 1.0);
+}
+`;
+
+// Curl Shader: Calculates the 2D curl of the velocity field.
+export const curlFragmentShader = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+in vec2 vUv;
+out vec4 fragColor;
+
+uniform sampler2D uVelocity;
+
+void main() {
+    float L = textureOffset(uVelocity, vUv, ivec2(-1, 0)).y;
+    float R = textureOffset(uVelocity, vUv, ivec2(1, 0)).y;
+    float B = textureOffset(uVelocity, vUv, ivec2(0, -1)).x;
+    float T = textureOffset(uVelocity, vUv, ivec2(0, 1)).x;
+    
+    float curl = 0.5 * (R - L - T + B);
+    
+    fragColor = vec4(curl, 0.0, 0.0, 1.0);
+}
+`;
+
+// Vorticity Shader: Injects rotational force based on curl to preserve turbulence.
+export const vorticityFragmentShader = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+in vec2 vUv;
+out vec4 fragColor;
+
+uniform sampler2D uVelocity;
+uniform sampler2D uCurl;
+uniform float uConfinement;
+uniform float dt;
+uniform vec2 uResolution;
+
+void main() {
+    float L = textureOffset(uCurl, vUv, ivec2(-1, 0)).x;
+    float R = textureOffset(uCurl, vUv, ivec2(1, 0)).x;
+    float B = textureOffset(uCurl, vUv, ivec2(0, -1)).x;
+    float T = textureOffset(uCurl, vUv, ivec2(0, 1)).x;
+    float C = texture(uCurl, vUv).x;
+    
+    vec2 force = vec2(abs(T) - abs(B), abs(L) - abs(R));
+    force = normalize(force + vec2(1e-5));
+    
+    vec2 velocity = texture(uVelocity, vUv).xy;
+    velocity += force * uConfinement * C * dt;
+    
+    if (gl_FragCoord.x < 1.5 || gl_FragCoord.x > uResolution.x - 1.5 || 
+        gl_FragCoord.y < 1.5 || gl_FragCoord.y > uResolution.y - 1.5) {
+        velocity.xy = vec2(0.0);
+    }
     
     fragColor = vec4(velocity, 0.0, 1.0);
 }
