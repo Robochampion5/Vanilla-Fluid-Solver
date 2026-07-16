@@ -239,3 +239,19 @@ void main() {
     fragColor = vec4(velocity, 0.0, 1.0);
 }
 `;
+
+// Display Shader: Renders the fluid simulation to the screen.
+export const displayFragmentShader = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+in vec2 vUv;
+out vec4 fragColor;
+
+uniform sampler2D uTexture;
+
+void main() {
+    vec4 color = texture(uTexture, vUv);
+    fragColor = vec4(color.rgb, 1.0);
+}
+`;

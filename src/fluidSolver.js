@@ -11,7 +11,8 @@ import {
     jacobiFragmentShader,
     gradientSubtractFragmentShader,
     curlFragmentShader,
-    vorticityFragmentShader
+    vorticityFragmentShader,
+    displayFragmentShader
 } from './shaders.js';
 
 export class FluidSolver {
@@ -165,7 +166,8 @@ export class FluidSolver {
             jacobi: new GLProgram(this.gl, baseVertexShader, jacobiFragmentShader),
             gradientSubtract: new GLProgram(this.gl, baseVertexShader, gradientSubtractFragmentShader),
             curl: new GLProgram(this.gl, baseVertexShader, curlFragmentShader),
-            vorticity: new GLProgram(this.gl, baseVertexShader, vorticityFragmentShader)
+            vorticity: new GLProgram(this.gl, baseVertexShader, vorticityFragmentShader),
+            display: new GLProgram(this.gl, baseVertexShader, displayFragmentShader)
         };
     }
 
@@ -414,6 +416,63 @@ export class FluidSolver {
         
         // Swap read/write
         velocityTarget.swap();
+    }
+
+    /**
+     * Renders a target texture (usually Dye) to the default WebGL screen buffer.
+     */
+    render(target) {
+        const gl = this.gl;
+        const prog = this.programs.display;
+        
+        prog.bind();
+        
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, target.texture);
+        prog.setUniform('uTexture', '1i', 0);
+        
+        gl.bindVertexArray(this.vao);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.bindVertexArray(null);
+    }
+
+    /**
+     * Executes one full frame of the fluid simulation.
+     */
+    step(dt, config) {
+        const vel = this.renderTargets.velocity;
+        const dye = this.renderTargets.dye;
+        const curl = this.renderTargets.curl;
+        const div = this.renderTargets.divergence;
+        const pressure = this.renderTargets.pressure;
+        
+        // 1. Self-Advection
+        this.executeAdvection(vel, vel, dt, config.velocityDissipation || 0.2);
+        
+        // 2. Color Advection
+        this.executeAdvection(vel, dye, dt, config.dyeDissipation || 1.0);
+        
+        // 3. Turbulence Injection
+        this.executeCurl(vel, curl);
+        this.executeVorticity(vel, curl, config.confinement || 30.0, dt);
+        
+        // 4. Calculate Incompressibility Error
+        this.executeDivergence(vel, div);
+        
+        // 5. Reset Pressure Guess to prevent NaN drift
+        this.executeClear(pressure, 0.0);
+        
+        // 6. Jacobi Solver Loop
+        this.executePressure(div, pressure, config.iterations || 30);
+        
+        // 7. Project Divergence-Free Field
+        this.executeGradientSubtraction(vel, pressure);
+        
+        // 8. Draw to Screen
+        this.render(dye.read);
     }
 
     /**
