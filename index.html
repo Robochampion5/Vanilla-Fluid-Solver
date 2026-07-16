@@ -1,13 +1,57 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>webgl2-fluid-solver</title>
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>WebGL2 Eulerian Fluid</title>
   </head>
   <body>
-    <div id="app"></div>
+    <canvas id="sim-canvas"></canvas>
+
+    <main id="ui-panel">
+      <header>
+        <h1>Eulerian Fluid</h1>
+        <p>WebGL2 Navier-Stokes Solver</p>
+      </header>
+
+      <div class="controls">
+        <div class="control-group">
+          <div class="label-row">
+            <label for="dyeDissipation">Dye Decay</label>
+            <span id="val-dye">0.95</span>
+          </div>
+          <input type="range" id="dyeDissipation" min="0.0" max="5.0" step="0.05" value="0.95" />
+        </div>
+
+        <div class="control-group">
+          <div class="label-row">
+            <label for="velDissipation">Viscosity</label>
+            <span id="val-vel">0.20</span>
+          </div>
+          <input type="range" id="velDissipation" min="0.0" max="5.0" step="0.05" value="0.2" />
+        </div>
+
+        <div class="control-group">
+          <div class="label-row">
+            <label for="confinement">Turbulence</label>
+            <span id="val-conf">30.0</span>
+          </div>
+          <input type="range" id="confinement" min="0.0" max="100.0" step="1.0" value="30.0" />
+        </div>
+        
+        <div class="control-group">
+          <div class="label-row">
+            <label for="splatRadius">Brush Size</label>
+            <span id="val-rad">0.0010</span>
+          </div>
+          <input type="range" id="splatRadius" min="0.0001" max="0.01" step="0.0001" value="0.001" />
+        </div>
+
+        <button id="clear-btn">Clear Fluid</button>
+      </div>
+    </main>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
